@@ -195,3 +195,29 @@ def calculate_port_flow_rate(dg, port_name):
         areas = [a + b for a, b in zip(areas, areas[1:])]
         total_area = logical_and(*areas)
     return (total_area * (((2 * port_pressure) / port_density) ** 0.5))
+	
+	
+def calculate_electric_field(dg, anode_node_name, cathode_node_name):
+	"""Calculate the electric field strength between 2 nodes with applied voltage
+	Written for calculating the field between the anode and cathode in the ep_cross.
+	Assumes constant electric field: http://hyperphysics.phy-astr.gsu.edu/hbase/electric/elewor.html
+	E = V/d
+	
+	:param str anode_node_name: Name of the node with the higher voltage
+	:param str cathode_node_name: Name of the node with the lower voltage
+	:returns: Electric field (V/m)
+	"""
+	voltage_1 = retrieve(dg, cathode_node_name, 'voltage')
+	voltage_2 = retrieve(dg, anode_node_name, 'voltage')
+	
+	delta_voltage = voltage_2 - voltage_1
+	
+	length = 1  # placeholder
+	# find path between the 2 nodes (there should only be 1 possible path)
+	# length = sum of all the lengths of the edges that form the path
+	
+	return (delta_voltage / length)
+	
+	
+	
+	
