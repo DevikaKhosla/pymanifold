@@ -6,6 +6,7 @@ import networkx as nx
 #  dReal SMT solver
 from dreal.symbolic import Variable, logical_and
 from dreal.api import CheckSatisfiability
+from OMPython import ModelicaSystem
 
 from src import constants
 import algorithms
@@ -53,17 +54,20 @@ class Schematic():
 
         # Add new node types and their validation method to this dict
         # to maintain consistent checking across all methods
-        self.translation_strats = {'input': translate.translate_input,
-                                   'output': translate.translate_output,
-                                   't-junction': translate.translate_tjunc,
-                                   'rectangle': translate.translate_channel
-                                   }
+        self.translation_strats = dir(translate)
+        #  {'input': translate.translate_input,
+        #                             'node': translate.translate_node,
+        #                             'output': translate.translate_output,
+        #                             't-junction': translate.translate_tjunc,
+        #                             'rectangle': translate.translate_channel
+        #                             }
 
         # DiGraph that will contain all nodes and channels
         self.dg = nx.DiGraph()
 
     def validate_params(self, params: dict, component: str, name: str):
-        """TODO: Docstring for validate_params.
+        """Checks that the parameters provided to a primitive type definition are valid
+        i.e. that strings are actually string, numbers are actually ints or floats
 
         :param params dict: Dictionary containing all parameters and their cooresponding type
         :param component str: What primitive type this is checking, Node, Port, Channel, etc.
@@ -83,12 +87,28 @@ class Schematic():
             elif value == 'number':
                 # list of values that should all be positive numbers, in doing so also
                 # checks if its an int or float
+                if not isinstance(param, int) and not isinstance(param, float):
+                    raise TypeError("%s '%s' parameter '%s' must be int or float" %
+                                    (component, name, param))
+            elif value == 'negative number':
+                # list of values that should all be positive numbers, in doing so also
+                # checks if its an int or float
+                try:
+                    if param > 0:
+                        raise ValueError("%s '%s' parameter '%s' must be >= 0" %
+                                         (component, name, param))
+                except TypeError as e:
+                    raise TypeError("%s '%s' parameter '%s' must be int or float" %
+                                    (component, name, param))
+            elif value == 'positive number':
+                # list of values that should all be positive numbers, in doing so also
+                # checks if its an int or float
                 try:
                     if param < 0:
                         raise ValueError("%s '%s' parameter '%s' must be >= 0" %
                                          (component, name, param))
                 except TypeError as e:
-                    raise TypeError("%s '%s' parameter '%s' must be int" %
+                    raise TypeError("%s '%s' parameter '%s' must be int or float" %
                                     (component, name, param))
 
     def channel(self,
@@ -97,6 +117,8 @@ class Schematic():
                 min_length=False,
                 min_width=False,
                 min_height=False,
+                min_depth=False,
+                min_resolution=False,
                 kind='rectangle',
                 phase='None'
                 ):
@@ -119,28 +141,33 @@ class Schematic():
         """
         # Collection of the kinds for which there are methods to calculate their
         # channel resistance
+        # TODO: Create way to send type to translate_channel
         valid_kinds = ("rectangle")
 
         name = (port_from, port_to)
 
         user_provided_params = {port_from: 'string',
                                 port_to: 'string',
-                                min_length: 'number',
-                                min_width: 'number',
-                                min_height: 'number',
+                                min_length: 'positive number',
+                                min_width: 'positive number',
+                                min_height: 'positive number',
+                                min_depth: 'positive number',
+                                min_resolution: 'positive number',
                                 kind: 'string',
                                 phase: 'string'
                                 }
         # Checking that arguments are valid
         if kind not in valid_kinds:
             raise ValueError("Valid channel kinds are: %s" % valid_kinds)
+        if kind == "rectangle":
+            kind = "channel"
 
         self.validate_params(user_provided_params, 'Channel', name)
 
         if (port_from, port_to) in self.dg.edges:
             raise ValueError("Channel already exists between these nodes %s" % (port_from, port_to))
-        if kind.lower() not in self.translation_strats.keys():
-            raise ValueError("kind must be either %s" % self.translation_strats.keys())
+        if 'translate_' + kind.lower() not in self.translation_strats:
+            raise ValueError("kind must be either %s" % self.translation_strats)
 
         # Add the information about that connection to another dict
         # There's extra parameters in here than in the arguments because they
@@ -154,6 +181,10 @@ class Schematic():
                       'min_width': min_width,
                       'height': Variable('_'.join([*name, 'height'])),
                       'min_height': min_height,
+                      'depth': Variable('_'.join([*name, 'depth'])),
+                      'min_depth': min_depth,
+                      'resolution': Variable('_'.join([*name, 'resolution'])),
+                      'min_resolution': min_depth,
                       'flow_rate': Variable('_'.join([*name, 'flow_rate'])),
                       'droplet_volume': Variable('_'.join([*name, 'droplet_volume'])),
                       'viscosity': Variable('_'.join([*name, 'viscosity'])),
@@ -162,6 +193,14 @@ class Schematic():
                       'port_from': port_from,
                       'port_to': port_to
                       }
+
+        # If user provides values, put them into the attributes dictionary
+        if not min_width:
+            attributes['min_width'] = min_width
+        if not min_length:
+            attributes['min_length'] = min_length
+        if not min_height:
+            attributes['min_height'] = min_height
 
         # Create this edge in the graph
         self.dg.add_edge(*name)
@@ -197,10 +236,10 @@ class Schematic():
                  ValueError if an input parameter has an invalid value
         """
         user_provided_params = {name: 'string',
-                                min_pressure: 'number',
-                                min_flow_rate: 'number',
-                                x: 'number',
-                                y: 'number',
+                                min_pressure: 'positive number',
+                                min_flow_rate: 'positive number',
+                                x: 'positive number',
+                                y: 'positive number',
                                 kind: 'string',
                                 fluid_name: 'string'
                                 }
@@ -209,8 +248,8 @@ class Schematic():
 
         if name in self.dg.nodes:
             raise ValueError("Must provide a unique name")
-        if kind.lower() not in self.translation_strats.keys():
-            raise ValueError("kind must be either %s" % self.translation_strats.keys())
+        if 'translate_' + kind.lower() not in self.translation_strats:
+            raise ValueError("kind must be either %s" % self.translation_strats)
 
         # Initialize fluid properties
         fluid_properties = Fluid(fluid_name)
@@ -232,6 +271,16 @@ class Schematic():
                       'min_x': x,
                       'min_y': y
                       }
+
+        # If user provides values, put them into the attributes dictionary
+        if not x:
+            attributes['min_x'] = x
+        if not y:
+            attributes['min_y'] = y
+        if not min_flow_rate:
+            attributes['min_flow_rate'] = min_flow_rate
+        if not min_pressure:
+            attributes['min_pressure'] = min_pressure
 
         # Create this node in the graph
         self.dg.add_node(name)
@@ -255,8 +304,8 @@ class Schematic():
                  ValueError if an input parameter has an invalid value
         """
         user_provided_params = {name: 'string',
-                                x: 'number',
-                                y: 'number',
+                                x: 'positive number',
+                                y: 'positive number',
                                 kind: 'string'
                                 }
         # Checking that arguments are valid
@@ -264,8 +313,8 @@ class Schematic():
 
         if name in self.dg.nodes:
             raise ValueError("Must provide a unique name")
-        if kind.lower() not in self.translation_strats.keys():
-            raise ValueError("kind must be either %s" % self.translation_strats.keys())
+        if 'translate_' + kind.lower() not in self.translation_strats:
+            raise ValueError("kind must be either %s" % self.translation_strats)
 
         # Ports are stored with nodes because ports are just a specific type of
         # node that has a constant flow rate only accept ports of the right
@@ -288,6 +337,12 @@ class Schematic():
                       'y': Variable(name + '_y'),
                       'min_y': None
                       }
+
+        # If user provides values, put them into the attributes dictionary
+        if x:
+            attributes['min_x'] = x
+        if y:
+            attributes['min_y'] = y
 
         # Create this node in the graph
         self.dg.add_node(name)
@@ -325,12 +380,12 @@ class Schematic():
                  ValueError if an input parameter has an invalid value
         """
         user_provided_params = {name: 'string',
-                                min_pressure: 'number',
-                                min_flow_rate: 'number',
-                                x: 'number',
-                                y: 'number',
+                                min_pressure: 'positive number',
+                                min_flow_rate: 'positive number',
+                                x: 'positive number',
+                                y: 'positive number',
                                 voltage: 'number',
-                                current: 'number',
+                                current: 'positive number',
                                 kind: 'string',
                                 fluid_name: 'string'
                                 }
@@ -339,8 +394,8 @@ class Schematic():
 
         if name in self.dg.nodes:
             raise ValueError("Must provide a unique name")
-        if kind.lower() not in self.translation_strats.keys():
-            raise ValueError("kind must be either %s" % self.translation_strats.keys())
+        if kind.lower() not in self.translation_strats:
+            raise ValueError("kind must be either %s" % self.translation_strats)
 
         # Initialize fluid properties
         fluid_properties = Fluid(fluid_name)
@@ -374,7 +429,7 @@ class Schematic():
 
     def translate_schematic(self):
         """Validates that each node has the correct input and output
-        conditions met then translates it into pysmt syntax
+        conditions met then translates it into dReal syntax
         Generates SMT formulas to simulate specialized nodes like T-junctions
         and stores them in self.exprs
         """
@@ -390,14 +445,15 @@ class Schematic():
                 has_input = True
                 # first ensure that it has an output
                 has_output = False
-                # TODO: Need to create list of output + input nodes to see if
-                #       they connect
+                # TODO: Need to create list of output + input nodes to see if they connect
                 for x, y in self.dg.nodes(data=True):
                     if y['kind'] == 'output':
+                        # There's an output, so call translate on input
                         has_output = True
-                        # Input has output, so call translate on input
-                        [self.exprs.append(val) for val in self.translation_strats[kind](self.dg, name)]
-                if not has_output:
+                # TODO: Output may not be connected to input, check for it
+                if has_output:
+                    [self.exprs.append(val) for val in translate.translate_input(self.dg, name)]
+                else:
                     raise ValueError('Schematic input %s has no output' % name)
         if not has_input:
             raise ValueError('Schematic has no input')
@@ -413,7 +469,7 @@ class Schematic():
 
         :param bool show: If true then the full SMT formula that was created is
                           printed
-        :returns: pySMT model showing the values for each of the parameters
+        :returns: dReal model showing the values for each of the parameters
         """
         formula = logical_and(*self.exprs)
         # Prints the generated formula in full, remove serialize for shortened
@@ -423,7 +479,7 @@ class Schematic():
             print(formula)
         # Return None if not solvable, returns a dict-like structure giving the
         # range of values for each Variable
-        model = CheckSatisfiability(formula, 1)
+        model = CheckSatisfiability(formula, 10)
         if model:
             return model
         else:
@@ -431,7 +487,7 @@ class Schematic():
 
     def solve(self, show=False):
         """Create the SMT2 equation for this schematic outlining the design
-        of a microfluidic circuit and use Z3 to solve it using pysmt
+        of a microfluidic circuit and use dReal to solve it
 
         :param bool show: If true then the full SMT formula that was created is
                           printed
@@ -483,7 +539,6 @@ class Schematic():
             # Channel name is ch1, ch2, etc.
             channel_id = "ch" + str(idx)
             # Source is the same as port_from, but generated by Networkx
-            # TODO: Remove port_from and port_to
             manifold_ir["connections"][channel_id] = {"from": link_attribute_dict["source"],
                                                       "to": link_attribute_dict["target"],
                                                       "attributes": {}
@@ -527,3 +582,19 @@ class Schematic():
 
         with open(path, 'w') as outfile:
             json.dump(manifold_ir, outfile, separators=(',', ':'))
+
+    def to_modelica(self):
+        """Convert the schematic to a valid Modelica file
+        :returns: None
+        """
+        mod = ModelicaSystem("TJunctionSingleDrop.mo",
+                             "TJunctionSingleDrop",
+                             ["Modelica"]
+                             )
+        return mod.getQuantities()
+
+
+if __name__ == '__main__':
+    sch = Schematic([0, 0, 1, 1])
+    output = sch.to_modelica()
+    print(output)

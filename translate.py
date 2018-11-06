@@ -45,6 +45,16 @@ def translate_node(dg, name):
         exprs.append(algorithms.retrieve(dg, name, 'pressure') ==
                      logical_and(*output_pressure_formulas))
 
+    if algorithms.retrieve(dg, name, 'min_x'):
+        exprs.append(algorithms.retrieve(dg, name, 'x') ==
+                     algorithms.retrieve(dg, name, 'min_x'))
+    else:
+        exprs.append(algorithms.retrieve(dg, name, 'x') >= 0)
+    if algorithms.retrieve(dg, name, 'min_y'):
+        exprs.append(algorithms.retrieve(dg, name, 'y') ==
+                     algorithms.retrieve(dg, name, 'min_y'))
+    else:
+        exprs.append(algorithms.retrieve(dg, name, 'y') >= 0)
     # If parameters are provided by the user, then set the
     # their Variable equal to that value, otherwise make it greater than 0
     if algorithms.retrieve(dg, name, 'min_pressure'):
@@ -55,16 +65,6 @@ def translate_node(dg, name):
                      algorithms.retrieve(dg, name, 'min_pressure'))
     else:
         exprs.append(algorithms.retrieve(dg, name, 'pressure') > 0)
-
-    if algorithms.retrieve(dg, name, 'min_density'):
-        exprs.append(algorithms.retrieve(dg, name, 'x') ==
-                     algorithms.retrieve(dg, name, 'min_x'))
-        exprs.append(algorithms.retrieve(dg, name, 'y') ==
-                     algorithms.retrieve(dg, name, 'min_y'))
-    else:
-        exprs.append(algorithms.retrieve(dg, name, 'x') >= 0)
-        exprs.append(algorithms.retrieve(dg, name, 'y') >= 0)
-
     if algorithms.retrieve(dg, name, 'min_flow_rate'):
         exprs.append(algorithms.retrieve(dg, name, 'flow_rate') ==
                      algorithms.retrieve(dg, name, 'min_flow_rate'))
@@ -81,6 +81,20 @@ def translate_node(dg, name):
                      algorithms.retrieve(dg, name, 'min_density'))
     else:
         exprs.append(algorithms.retrieve(dg, name, 'density') > 0)
+
+    densities = []
+    for node_in in dg.pred[name]:
+        densities.append(algorithms.retrieve(dg, node_in, 'density'))
+
+    # If they are all equal, then set this node to be that density if there is a value
+    # TODO: Create case for when different densities come in
+    if densities and densities[1:] == densities[:-1]:
+        exprs.append(algorithms.retrieve(dg, name, 'density') ==
+                     algorithms.retrieve(dg, list(dg.pred[name].keys())[0], 'density'))
+    # To recursively traverse, call on all successor channels
+    for node_out in dg.succ[name]:
+        [exprs.append(val) for val in translation_strats[
+            algorithms.retrieve(dg, (name, node_out), 'kind')](dg, (name, node_out))]
     return exprs
 
 
@@ -100,18 +114,19 @@ def translate_input(dg, name):
         raise ValueError("Cannot have channels into input port %s" % name)
 
     # If input is a type of node, call translate node
-    translate_node(dg, name)
+    [exprs.append(val) for val in translate_node(dg, name)]
 
     # Calculate flow rate for this port based on pressure and channels out
     # if not specified by user
     if not algorithms.retrieve(dg, name, 'min_flow_rate'):
-        flow_rate = algorithms.calculate_port_flow_rate(dg, name)
-        exprs.append(algorithms.retrieve(dg, name, 'flow_rate') == flow_rate)
+        exprs.append(algorithms.calculate_port_flow_rate(dg, name))
+    # TODO: Come up with a reasonable maximum pressure
+    exprs.append((algorithms.retrieve(dg, name, 'flow_rate') < 100))
 
     # To recursively traverse, call on all successor channels
-    for node_out in dg.succ[name]:
-        translation_strats[
-            algorithms.retrieve(dg, (name, node_out), 'kind')](dg, (name, node_out))
+    #  for node_out in dg.succ[name]:
+    #      [exprs.append(val) for val in translation_strats[
+    #          algorithms.retrieve(dg, (name, node_out), 'kind')](dg, (name, node_out))]
     return exprs
 
 
@@ -131,7 +146,7 @@ def translate_output(dg, name):
         raise ValueError("Cannot have channels out of output port %s" % name)
 
     # Since input is just a specialized node, call translate node
-    translate_node(dg, name)
+    [exprs.append(val) for val in translate_node(dg, name)]
 
     # Calculate flow rate for this port based on pressure and channels out
     # if not specified by user
@@ -179,16 +194,31 @@ def translate_channel(dg, name):
                      algorithms.retrieve(dg, name, 'min_length'))
     else:
         exprs.append(algorithms.retrieve(dg, name, 'length') > 0)
+
     if algorithms.retrieve(dg, name, 'min_width'):
         exprs.append(algorithms.retrieve(dg, name, 'width') ==
                      algorithms.retrieve(dg, name, 'min_width'))
     else:
         exprs.append(algorithms.retrieve(dg, name, 'width') > 0)
+    if algorithms.retrieve(dg, name, 'min_resolution'):
+        exprs.append(algorithms.retrieve(dg, name, 'width') <
+                     algorithms.retrieve(dg, name, 'min_resolution'))
+    else:
+        # Set default to be less than 0.0001m
+        exprs.append(algorithms.retrieve(dg, name, 'width') < 1)
+
     if algorithms.retrieve(dg, name, 'min_height'):
         exprs.append(algorithms.retrieve(dg, name, 'height') ==
                      algorithms.retrieve(dg, name, 'min_height'))
     else:
-        exprs.append(algorithms.retrieve(dg, name, 'height') > 0)
+        # Set default to be greater than 1um
+        exprs.append(algorithms.retrieve(dg, name, 'height') > 0.000001)
+    if algorithms.retrieve(dg, name, 'min_depth'):
+        exprs.append(algorithms.retrieve(dg, name, 'height') <
+                     algorithms.retrieve(dg, name, 'min_depth'))
+    else:
+        # Set default to be less than 0.001m
+        exprs.append(algorithms.retrieve(dg, name, 'height') < 0.001)
 
     # Assert that viscosity in channel equals input node viscosity
     # Set output viscosity to equal input since this should be constant
@@ -217,8 +247,9 @@ def translate_channel(dg, name):
 
     # Channels do not have pressure because it decreases across channel
     # Call translate on the output to continue traversing the channel
-    translation_strats[algorithms.retrieve(dg,
-        algorithms.retrieve(dg, name, 'port_to'), 'kind')](dg, algorithms.retrieve(dg, name, 'port_to'))
+    [exprs.append(val) for val in translation_strats[algorithms.retrieve(dg,
+        algorithms.retrieve(dg, name, 'port_to'), 'kind')]\
+        (dg, algorithms.retrieve(dg, name, 'port_to'))]
     return exprs
 
 
@@ -330,7 +361,7 @@ def translate_tjunc(dg, name, crit_crossing_angle=0.5):
                      epsilon,
                      algorithms.retrieve(dg, dispersed_node_name, 'flow_rate'),
                      algorithms.retrieve(dg, continuous_node_name, 'flow_rate')
-                 ))
+                     ))
 
     # Assert critical angle is <= calculated angle
     cosine_squared_theta_crit = math.cos(math.radians(crit_crossing_angle))**2
@@ -356,10 +387,10 @@ def translate_tjunc(dg, name, crit_crossing_angle=0.5):
                                                   dispersed_node_name
                                                   ))
     # Call translate on output
-    translation_strats[algorithms.retrieve(dg,
-                                           output_node_name,
-                                           'kind'
-                                           )](dg, output_node_name)
+    [exprs.append(val) for val in translation_strats[algorithms.retrieve(dg,
+                                                                         output_node_name,
+                                                                         'kind'
+                                                                         )](dg, output_node_name)]
     return exprs
 	
 	
@@ -469,7 +500,14 @@ def translate_ep_cross(dg, name):
 
 translation_strats = {'input': translate_input,
                       'output': translate_output,
+<<<<<<< HEAD
                       't-junction': translate_tjunc,
                       'rectangle': translate_channel,
 					  'ep_cross': translate_ep_cross
+=======
+                      'node': translate_node,
+                      'channel': translate_channel,
+                      'tjunc': translate_tjunc,
+                      'rectangle': translate_channel
+>>>>>>> refs/remotes/manifold-lang/master
                       }
