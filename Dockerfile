@@ -4,9 +4,9 @@ MAINTAINER jsreid13@gmail.com
 WORKDIR /home
 
 RUN apt update \
-    && apt install -y --no-install-recommends wget \
-	&& wget https://bootstrap.pypa.io/get-pip.py \
-	&& python3 get-pip.py
+    && apt install -y --no-install-recommends wget git
+RUN wget https://bootstrap.pypa.io/get-pip.py \
+    && python3 get-pip.py
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 # Install OpenModellica

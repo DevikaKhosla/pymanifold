@@ -1,6 +1,6 @@
 import math
 import networkx as nx
-import algorithms
+from src import algorithms
 from dreal.symbolic import Variable, logical_and
 
 
