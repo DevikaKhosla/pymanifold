@@ -392,14 +392,13 @@ def translate_tjunc(dg, name, crit_crossing_angle=0.5):
                                                                          'kind'
                                                                          )](dg, output_node_name)]
     return exprs
-	
-	
-	
+
+
+
 def translate_ep_cross(dg, name):
 	"""Create SMT expressions for an electrophoretic cross
-	
-	:param str name: the name of the channel to generate SMT equations for ?
-	
+
+	:param str name: the name of the junction node in the electrophoretic cross
 	:returns: None -- no issues with translating channel parameters to SMT
 	:raises:
 	"""
@@ -407,86 +406,59 @@ def translate_ep_cross(dg, name):
 	# work in progress
 	# comments will be cleaned up once code is working
 	exprs = []
-	
+
 	# Validate input
 	if dg.size(name) != 4:
 		raise ValueError("Electrophoretic Cross %s must have 4 connections", % name)
-		
+
 	# Electrophoretic Cross is a type of node, so call translate node
 	translate_node(dg, name)
-	
-	
+
+
 	# Notes:
-	# input to waste is pressure driven flow
-	# anode to cathode is electrophoretic (molecules) 
+	# anode to cathode is electrophoretic (molecules)
 	# 	and electroosmotic flow (bulk), not pressure driven
-	
-	
+    # user needs to specify which channel is for separation
+        # assume the other input channel is for injection?
+
+
 	# Possible things that need to have constraints/equations:
 	# assert anode to cathode is straight?
-	# assert that input node to waste node is straight?  
+	# assert that input node to waste node is straight?
 	#	possibly it doesn't have to be
 	# viscosity
 	# flow rate
-	# relationship b/w voltage, channel length, and electric field
-	# calculation of mobility
-	# mobility, e-field -> velocity
-	# velocity  -> concentration profile
-	
-	
+    # x_detector < channel length
+    # concentration peaks are disinguishable
+    # each delta t (tmax -  tmin) is > min detector sampling time
+
+
 	# Because it's done in translate_tjunc
 	ep_cross_node_name = name
-	
-	# figure out which nodes are for sample injection and which are for separation channel
-	# basically assume 4 nodes: 2 input, 2 output, input/output with voltage are for separation channel
-	# BUT in Stephen Chou's paper they do apply voltage to all 4 nodes
-	# 	in that case maybe the user needs to specify which node the sample will go in?
-	nodes_with_voltage = (nx.get_node_attributes(dg, 'voltage')).keys()
-	output_nodes = dict(dg.succ[name]).keys()
-	
-	#anode_name = list( set(nodes_with_voltage).intersection(output_nodes) )[0]
-	
-	all_node_names = dict(dg.nodes).keys()
-	all_node_names.remove(name)
-	
-	# also need to add error checking
-	# possibly there's a better way to do this
-	for node_name in all_node_names:
-		if node_name in nodes_with_voltage:
-			if node_name in output_nodes:
-				anode_name = node_name
-			else:
-				cathode_name = node_name
-		else:
-			if node_name in output_nodes:
-				injection_node_name = node_name
-			else:
-				waste_node_name = node_name
 
-	tail_channel_name = (cathode_name, ep_cross_node_name)
-	separation_channel_name = (ep_cross_node_name, anode_name)
-	injection_channel_name = (injection_node_name, ep_cross_node_name)
-	waste_channel_name = (ep_cross_node_name, waste_node_name)
-	
-	
+	# figure out which nodes are for sample injection and which are for separation channel
+	# assume single input node, 3 output nodes, one junction node
+    # assume separation channel is specified by user
+
+
 	# assert dimensions:
 	# assert width and height of tail channel to be equal to separation channel
 	exprs.append(algorithms.retrieve(dg, tail_channel_name, 'width') ==
 				 algorithms.retrieve(dg, separation_channel_name, 'width'))
 	exprs.append(algorithms.retrieve(dg, tail_channel_name, 'height') ==
 				 algorithms.retrieve(dg, separation_channel_name, 'height'))
-	
+
 	# assert width and height of injection channel to be equal to waste channel
 	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'width') ==
 				 algorithms.retrieve(dg, waste_channel_name, 'width'))
 	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
 				 algorithms.retrieve(dg, waste_channel_name, 'height'))
-				 
+
 	# assert height of separation channel and injection channel are same
 	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
 				 algorithms.retrieve(dg, separation_channel_name, 'height'))
-	
-	
+
+
 	# Assert that tail and separation channels are in a straight line
 	# is this a valid assumption?
     exprs.append(algorithms.channels_in_straight_line(dg,
@@ -494,20 +466,15 @@ def translate_ep_cross(dg, name):
                                                       ep_cross_node_name,
                                                       anode_name
                                                       ))
-													  
+
 	return exprs
 
 
 translation_strats = {'input': translate_input,
                       'output': translate_output,
-<<<<<<< HEAD
-                      't-junction': translate_tjunc,
-                      'rectangle': translate_channel,
-					  'ep_cross': translate_ep_cross
-=======
                       'node': translate_node,
                       'channel': translate_channel,
                       'tjunc': translate_tjunc,
-                      'rectangle': translate_channel
->>>>>>> refs/remotes/manifold-lang/master
+                      'rectangle': translate_channel,
+                      'ep_cross': translate_ep_cross
                       }
