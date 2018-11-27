@@ -440,6 +440,29 @@ def translate_ep_cross(dg, name):
 	# assume single input node, 3 output nodes, one junction node
     # assume separation channel is specified by user
 
+    # is the direction of the graph same as fluid flow?
+    # are the cathode and anode both output nodes?
+    phases = nx.get_edge_attributes(dg, 'phase')
+    for edge, phase in phases.iteritems():
+        # assuming only one separation channel, and only 1 tail channel
+        if phase == 'separation':
+            separation_channel_name = edge
+            anode_node_name = edge[1]
+        if phase == 'tail':
+            tail_channel_name = edge
+            cathode_node_name = edge[ edge[0] == ep_cross_node_name ]  # returns whichever tuple element is NOT the ep_cross node
+
+    # is there a better way to do this?
+    node_kinds = nx.get_node_attributes(dg, 'kind')
+    for node, kind in node_kinds.iteritems():
+        if node not in separation_channel_name and node not in tail_channel_name:
+            if kind == 'input':
+                injection_channel_name = (node, ep_cross_node_name)
+                injection_node_name = node  # necessary?
+            if kind == 'output':
+                waste_channel_name = (ep_cross_node_name, node)
+                waste_node_name = node  # necessary?
+
 
 	# assert dimensions:
 	# assert width and height of tail channel to be equal to separation channel
@@ -460,12 +483,51 @@ def translate_ep_cross(dg, name):
 
 
 	# Assert that tail and separation channels are in a straight line
-	# is this a valid assumption?
-    exprs.append(algorithms.channels_in_straight_line(dg,
-                                                      cathode_name,
-                                                      ep_cross_node_name,
-                                                      anode_name
-                                                      ))
+	# is this a valid assumption? No
+
+    # electric field
+    E = variable('E')
+    exprs.append(E == algorithms.calculate_electric_field(dg, anode_node_name, cathode_node_name)
+
+    # UNFINISHED:
+    # figure out how diffusion coefficients D[i], charges q[i], radii r[i],
+    # and initial concentrations C0[i] will be imported and in what form
+    # n = len(C0[i]) or len(D[i]) - n is number of analytes
+
+    # do I need a variable for each analyte?
+    # number of analytes unknown - is it possible to make a list of variables?
+    for i in range(0, n):
+        mu[i] = algorithms.calculate_mobility(dg, separation_channel_name, q[i], r[i])
+
+    v_n = variable('v_n')
+    v_n = algorithms.calculate_charged_particle_velocity(mu[n], E)
+
+    # detector position is somewhere along the separation channel
+    # assume x_detector ranges from 0 to length of channel
+    # to get absolute position of detector, add x_detector to ep_cross_node position
+    exprs.append( x_detector <= algorithms.retrieve(dg, separation_channel_name, 'length') )
+
+    # hard coding for now
+    # pass these as arguments into the translate_ep_cross function instead?
+    exprs.append(min_sampling_rate == 1)  # 1 second
+
+    # C_negligible is the minimum concentration level
+    # i.e. smallest concentration peak should be > C_negligible
+    C_floor = variable('C_floor')
+    C_negligible = variable('C_negligible')
+    # p is a constant between 0 and 1; hard-coded for now
+    p = variable('p')
+    exprs.append(p == 0.5)
+    exprs.append(C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) )
+    exprs.append(C_negligible ==  p * C_floor )
+
+
+
+    exprs.append()
+
+    min_sampling_rate = variable('min_sampling_rate')
+    x_detector = variable('x_detector')
+    #x_detector_perc = variable('x_detector_perc')
 
 	return exprs
 
