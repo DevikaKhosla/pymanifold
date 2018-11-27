@@ -19,7 +19,7 @@ cathode_voltage = 0
 anode_voltage = 2
 
 # syntax: sch.elec_port(name, design[, voltage, pressure, flow_rate, density, X_pos, Y_pos])
-sch.elec_port(cathode_node, 'input', voltage=cathode_voltage, min_pressure=1, fluid_name='mineraloil')
+sch.elec_port(cathode_node, 'output', voltage=cathode_voltage, min_pressure=1) #, fluid_name='mineraloil')
 sch.elec_port(anode_node, 'output', voltage=anode_voltage)
 # normal ports do not have voltages; syntax is otherwise the same
 sch.port(input_node, 'input', min_pressure=1, fluid_name='water')
@@ -29,17 +29,10 @@ sch.port(waste_node, 'output')
 sch.node(junction_node, 1, 1, kind='ep_cross')
 
 # syntax: sch.channel(shape, min_length, width, height, input, output)
-sch.channel(cathode_node, 
-			junction_node
-			)
-sch.channel(junction_node, 
-			anode_node
-			)
-sch.channel(input_node, 
-			junction_node
-			)
-sch.channel(junction_node, 
-			waste_node
-			)
-			
+sch.channel(cathode_node, junction_node)
+sch.channel(junction_node, anode_node,
+			phase = 'separation')
+sch.channel(input_node, junction_node)
+sch.channel(junction_node, waste_node)
+
 print(sch.solve())
