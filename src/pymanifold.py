@@ -25,6 +25,13 @@ class Fluid():
         self.min_viscosity = constants.FluidProperties().getViscosity(fluid)
         self.min_pressure = False
 
+        # what does it do if the fluid doesn't exist?
+        self.analyte_diffusivities = constants.FluidProperties().getDiffusivities(fluid)
+        self.analyte_initial_concentrations = constants.FluidProperties().getInitialConcentrations(fluid)
+        self.analyte_radii = constants.FluidProperties().getRadii(fluid)
+        self.analyte_charges = constants.FluidProperties().getCharges(fluid)
+
+
     def updateFluidProperties(self,
                               min_density=False,
                               min_viscosity=False,
@@ -34,6 +41,8 @@ class Fluid():
         """If the user wants to tweek the values of the fluids manually, call this method
         TODO: Currently all parameters have to be provided, make it so only the ones
               provided are updated
+              Currently there is no way to update the analyte parameters
+              (diffusivity, concentration, etc)
         """
         self.min_density = min_density
         self.min_resistivity = min_resistivity
@@ -130,7 +139,8 @@ class Schematic():
                 min_depth=False,
                 min_resolution=False,
                 kind='rectangle',
-                phase='None'
+                phase='None',
+                min_sampling_rate=1
                 ):
         """Create new connection between two nodes/ports with attributes
         consisting of the dimensions of the channel to be used to create the
@@ -163,7 +173,8 @@ class Schematic():
                                 min_depth: 'positive number',
                                 min_resolution: 'positive number',
                                 kind: 'string',
-                                phase: 'string'
+                                phase: 'string',
+                                min_sampling_rate: 'positive number'
                                 }
         # Checking that arguments are valid
         # TODO: Modify this to make it work for other channel shapes
@@ -201,7 +212,9 @@ class Schematic():
                       'resistance': Variable('_'.join([*name, 'resistance'])),
                       'phase': phase.lower(),
                       'port_from': port_from,
-                      'port_to': port_to
+                      'port_to': port_to,
+                      'x_detector': Variable('_'.join([*name, 'x_detector'])),
+                      'min_sampling_rate': min_sampling_rate
                       }
 
         # If user provides values, put them into the attributes dictionary
@@ -279,7 +292,11 @@ class Schematic():
                       'x': Variable(name + '_x'),
                       'y': Variable(name + '_y'),
                       'min_x': x,
-                      'min_y': y
+                      'min_y': y,
+                      'analyte_diffusivities': fluid_properties.analyte_diffusivities,
+                      'analyte_initial_concentrations': fluid_properties.analyte_initial_concentrations,
+                      'analyte_radii': fluid_properties.analyte_radii,
+                      'analyte_charges': fluid_properties.analyte_charges
                       }
 
         # If user provides values, put them into the attributes dictionary
