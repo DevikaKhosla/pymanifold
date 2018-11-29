@@ -395,24 +395,24 @@ def translate_tjunc(dg, name, crit_crossing_angle=0.5):
 
 
 
-def translate_ep_cross(dg, name):
-	"""Create SMT expressions for an electrophoretic cross
+def translate_ep_cross(dg, name, fluid_name = 'default'):
+    """Create SMT expressions for an electrophoretic cross
 
-	:param str name: the name of the junction node in the electrophoretic cross
-	:returns: None -- no issues with translating channel parameters to SMT
-	:raises:
-	"""
+    :param str name: the name of the junction node in the electrophoretic cross
+    :returns: None -- no issues with translating channel parameters to SMT
+    :raises:
+    """
 
-	# work in progress
-	# comments will be cleaned up once code is working
-	exprs = []
+    # work in progress
+    # comments will be cleaned up once code is working
+    exprs = []
 
 	# Validate input
-	if dg.size(name) != 4:
-		raise ValueError("Electrophoretic Cross %s must have 4 connections", % name)
+    if dg.size(name) != 4:
+        raise ValueError("Electrophoretic Cross %s must have 4 connections" % name)
 
 	# Electrophoretic Cross is a type of node, so call translate node
-	translate_node(dg, name)
+    translate_node(dg, name)
 
 
 	# Notes:
@@ -434,7 +434,7 @@ def translate_ep_cross(dg, name):
 
 
 	# Because it's done in translate_tjunc
-	ep_cross_node_name = name
+    ep_cross_node_name = name
 
 	# figure out which nodes are for sample injection and which are for separation channel
 	# assume single input node, 3 output nodes, one junction node
@@ -448,7 +448,7 @@ def translate_ep_cross(dg, name):
         if phase == 'separation':
             separation_channel_name = edge
             anode_node_name = edge[1]
-        if phase == 'tail':
+        elif phase == 'tail':
             tail_channel_name = edge
             cathode_node_name = edge[ edge[0] == ep_cross_node_name ]  # returns whichever tuple element is NOT the ep_cross node
 
@@ -459,77 +459,135 @@ def translate_ep_cross(dg, name):
             if kind == 'input':
                 injection_channel_name = (node, ep_cross_node_name)
                 injection_node_name = node  # necessary?
-            if kind == 'output':
+            elif kind == 'output':
                 waste_channel_name = (ep_cross_node_name, node)
                 waste_node_name = node  # necessary?
 
 
-	# assert dimensions:
-	# assert width and height of tail channel to be equal to separation channel
-	exprs.append(algorithms.retrieve(dg, tail_channel_name, 'width') ==
-				 algorithms.retrieve(dg, separation_channel_name, 'width'))
-	exprs.append(algorithms.retrieve(dg, tail_channel_name, 'height') ==
-				 algorithms.retrieve(dg, separation_channel_name, 'height'))
+    # assert dimensions:
+    # assert width and height of tail channel to be equal to separation channel
+    exprs.append(algorithms.retrieve(dg, tail_channel_name, 'width') ==
+                algorithms.retrieve(dg, separation_channel_name, 'width'))
+    exprs.append(algorithms.retrieve(dg, tail_channel_name, 'height') ==
+                algorithms.retrieve(dg, separation_channel_name, 'height'))
 
-	# assert width and height of injection channel to be equal to waste channel
-	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'width') ==
-				 algorithms.retrieve(dg, waste_channel_name, 'width'))
-	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
-				 algorithms.retrieve(dg, waste_channel_name, 'height'))
+    # assert width and height of injection channel to be equal to waste channel
+    exprs.append(algorithms.retrieve(dg, injection_channel_name, 'width') ==
+                algorithms.retrieve(dg, waste_channel_name, 'width'))
+    exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
+                algorithms.retrieve(dg, waste_channel_name, 'height'))
 
-	# assert height of separation channel and injection channel are same
-	exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
-				 algorithms.retrieve(dg, separation_channel_name, 'height'))
+    # assert height of separation channel and injection channel are same
+    exprs.append(algorithms.retrieve(dg, injection_channel_name, 'height') ==
+                 algorithms.retrieve(dg, separation_channel_name, 'height'))
 
 
-	# Assert that tail and separation channels are in a straight line
-	# is this a valid assumption? No
+    # Assert that tail and separation channels are in a straight line?  nah
 
     # electric field
-    E = variable('E')
-    exprs.append(E == algorithms.calculate_electric_field(dg, anode_node_name, cathode_node_name)
+    E = Variable('E')
+    exprs.append(E == algorithms.calculate_electric_field(dg, anode_node_name, cathode_node_name))
 
-    # UNFINISHED:
-    # figure out how diffusion coefficients D[i], charges q[i], radii r[i],
-    # and initial concentrations C0[i] will be imported and in what form
-    # n = len(C0[i]) or len(D[i]) - n is number of analytes
+    # do I need a variable for each analyte? yes
+    # number of analytes unknown - is it possible to make a list of variables? types
 
-    # do I need a variable for each analyte?
-    # number of analytes unknown - is it possible to make a list of variables?
+    # parameters that maybe should not be hardcoded, but are hardcoded for now:
+    # pass these as arguments into the translate_ep_cross function instead?
+    p = 0.5
+    q = 0.9
+    c = 0.4
+
+    # assume that the analyte parameters were included in the injection port
+    # need to validate that the data exists?
+    D = algorithms.retrieve(dg, injection_node_name, 'analyte_diffusivities')
+    C0 = algorithms.retrieve(dg, injection_node_name, 'analyte_initial_concentrations')
+    q = algorithms.retrieve(dg, injection_node_name, 'analyte_charges')
+    r = algorithms.retrieve(dg, injection_node_name, 'analyte_radii')
+    delta = algorithms.retrieve(dg, separation_channel_name, 'min_sampling_rate')
+    x_detector = algorithms.retrieve(dg, separation_channel_name, 'x_detector')
+
+    n = len(D)
+    mu = []
+    v = []
+    t_peak = []
+    t_min = []
+    C = []
+    W =  algorithms.retrieve(dg, injection_channel_name, 'width')
+
+    C_negligible = Variable('C_negligible')
+
+    # for each analyte
     for i in range(0, n):
-        mu[i] = algorithms.calculate_mobility(dg, separation_channel_name, q[i], r[i])
+        # calculate mobility
+        mu.append( Variable('mu_' + str(i)) )
+        exprs.append( mu[i] == algorithms.calculate_mobility(dg, separation_channel_name, q[i], r[i]) )
 
-    v_n = variable('v_n')
-    v_n = algorithms.calculate_charged_particle_velocity(mu[n], E)
+        # calculate velocity
+        v.append( Variable('v_' + str(i)) )
+        exprs.append( v[i] == algorithms.calculate_charged_particle_velocity( mu[i], E) )
+
+        # calculate t_peak, initialize variables for t_min
+        t_peak.append( Variable('t_peak_' + str(i)) )
+        t_min.append( Variable('t_min_' + str(i)) )
+        exprs.append( t_peak[i] == x_detector/v[i] )
+
+diff = []
+    for i in range(0, n-1):
+
+        # constrain that time difference between peaks is large enough to be detected
+        exprs.append(t_peak[i] + delta < t_min[i])
+        exprs.append(t_peak[i] + delta < t_min[i+1])
+
+        # constrain t_min to be where derivative of concentration is 0
+        # if two adjacent peaks are close enough in height, then can approximate Fi(tmin) = Fi+1(tmin)
+        # quantify closeness of heights of peaks using the variable diff
+        diff.append( Variable('diff_' + str(i)) )
+        exprs.append( diff[i] == C0[i]/C0[i+1] * math.sqrt(D[i+1]*mu[i]/(D[i]*mu[i+1])) )
+
+        # UNFINISHED:
+            # expression for C_negligible
+            # if/else for F(tmin)
+            # actually try running it
+
+        # F(tmin, i)/(F(tmax, i)) <= c
+        exprs.append(
+            (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) +
+             algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]) +
+             (n-2)*(1-q)/(n-3) * C_negligible)
+             / (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_peak[i]))
+             <= c
+         )
+
+        # F(tmin, i)/(F(tmax, i+1)) <= c
+        exprs.append(
+            (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) +
+             algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]) +
+             (n-2)*(1-q)/(n-3) * C_negligible)
+             / (algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_peak[i+1]))
+             <= c
+            )
+
+    # add list parameter
+    # retrieve will get list
+    # for loop to handle each  variable
 
     # detector position is somewhere along the separation channel
     # assume x_detector ranges from 0 to length of channel
     # to get absolute position of detector, add x_detector to ep_cross_node position
     exprs.append( x_detector <= algorithms.retrieve(dg, separation_channel_name, 'length') )
 
-    # hard coding for now
-    # pass these as arguments into the translate_ep_cross function instead?
-    exprs.append(min_sampling_rate == 1)  # 1 second
-
     # C_negligible is the minimum concentration level
     # i.e. smallest concentration peak should be > C_negligible
     C_floor = variable('C_floor')
     C_negligible = variable('C_negligible')
     # p is a constant between 0 and 1; hard-coded for now
-    p = variable('p')
-    exprs.append(p == 0.5)
-    exprs.append(C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) )
-    exprs.append(C_negligible ==  p * C_floor )
+
+    exprs.append( C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) ) )
+    exprs.append( C_negligible ==  p * C_floor )
 
 
 
-    exprs.append()
-
-    min_sampling_rate = variable('min_sampling_rate')
-    x_detector = variable('x_detector')
-    #x_detector_perc = variable('x_detector_perc')
-
-	return exprs
+    return exprs
 
 
 translation_strats = {'input': translate_input,
