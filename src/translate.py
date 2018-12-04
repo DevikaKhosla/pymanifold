@@ -2,6 +2,7 @@ import math
 import networkx as nx
 from src import algorithms
 from dreal.symbolic import Variable, logical_and
+from dreal import if_then_else
 
 
 def translate_chip(dg, name, dim):
@@ -511,10 +512,7 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
     v = []
     t_peak = []
     t_min = []
-    C = []
     W =  algorithms.retrieve(dg, injection_channel_name, 'width')
-
-    C_negligible = Variable('C_negligible')
 
     # for each analyte
     for i in range(0, n):
@@ -531,7 +529,27 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
         t_min.append( Variable('t_min_' + str(i)) )
         exprs.append( t_peak[i] == x_detector/v[i] )
 
-diff = []
+
+    # detector position is somewhere along the separation channel
+    # assume x_detector ranges from 0 to length of channel
+    # to get absolute position of detector, add x_detector to ep_cross_node position
+    exprs.append( x_detector <= algorithms.retrieve(dg, separation_channel_name, 'length') )
+
+    # C_negligible is the minimum concentration level
+    # i.e. smallest concentration peak should be > C_negligible
+    C_negligible = Variable('C_negligible')
+    C_floor = variable('C_floor')
+    sigma0 = variable('sigma0')
+
+    # WARNING: THIS EQUATION IS WRONG
+    # the current expression for sigma0 is wrong, adding it only to test the other equations
+    # only have definition of sigma0 for round channels (sigma0 ~ r_channel/2.355)
+    exprs.append(sigma0 == W / (2*2.355))
+    exprs.append( C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) ) )
+    exprs.append( C_negligible ==  p * C_floor )
+
+
+    diff = []
     for i in range(0, n-1):
 
         # constrain that time difference between peaks is large enough to be detected
@@ -539,15 +557,33 @@ diff = []
         exprs.append(t_peak[i] + delta < t_min[i+1])
 
         # constrain t_min to be where derivative of concentration is 0
-        # if two adjacent peaks are close enough in height, then can approximate Fi(tmin) = Fi+1(tmin)
+        # if two adjacent peaks are close enough in height, then instead of using
+        # the differential eqn, can approximate Fi(tmin) = Fi+1(tmin)
+        # where i is the current analyte, and i+1 is the next analyte
+        # and F = C(x_detector), C is concentration
         # quantify closeness of heights of peaks using the variable diff
         diff.append( Variable('diff_' + str(i)) )
         exprs.append( diff[i] == C0[i]/C0[i+1] * math.sqrt(D[i+1]*mu[i]/(D[i]*mu[i+1])) )
 
-        # UNFINISHED:
-            # expression for C_negligible
-            # if/else for F(tmin)
-            # actually try running it
+        # if 0.1 < diff < 10, then use expression Fi(tmin) = Fi+1(tmin)
+        # otherwise use expression dFi/dt (tmin) + dFi+1/dt (tmin) = 0
+        t_min_constraint_expression = if_then_else( logical_and(0.1 < diff, diff < 10),
+            algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) -
+            algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]),
+            (algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i])).Differentiate(t_min[i]) +
+            (algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i])).Differentiate(t_min[i])
+            )
+
+        exprs.append(t_min_constraint_expression == 0)
+
+        # C_negligible < p * min(Fi(t_peaki))
+        # I don't know how to use the min function in dreal, so I figured an
+        #  equivalent but less efficient way to do it is just to ensure it is
+        #  less than Fi(t_peaki), for every i
+        # Wrote this expression just in case; this is the more exact expression
+        #  for C_negligible, in case the simpler one does not work for square
+        #  channels
+        # exprs.append( C_negligible < p*algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_peak[i]))
 
         # F(tmin, i)/(F(tmax, i)) <= c
         exprs.append(
@@ -570,22 +606,6 @@ diff = []
     # add list parameter
     # retrieve will get list
     # for loop to handle each  variable
-
-    # detector position is somewhere along the separation channel
-    # assume x_detector ranges from 0 to length of channel
-    # to get absolute position of detector, add x_detector to ep_cross_node position
-    exprs.append( x_detector <= algorithms.retrieve(dg, separation_channel_name, 'length') )
-
-    # C_negligible is the minimum concentration level
-    # i.e. smallest concentration peak should be > C_negligible
-    C_floor = variable('C_floor')
-    C_negligible = variable('C_negligible')
-    # p is a constant between 0 and 1; hard-coded for now
-
-    exprs.append( C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) ) )
-    exprs.append( C_negligible ==  p * C_floor )
-
-
 
     return exprs
 

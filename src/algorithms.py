@@ -343,7 +343,7 @@ def calculate_concentration(dg, C0, D, W, v, x, t):
     :returns: concentration
     """
 
-    # what to do about the square root?
-    return C0/2.0 * ( erf_approximation( (W - x + v*t)/(2*math.sqrt(D*t)) ) +
-                      erf_approximation( (W + x - v*t)/(2*math.sqrt(D*t)) )
+    # note the square root(will hopefully work with SMT solver)
+    return C0/2.0 * ( erf_approximation( (W - x + v*t)/(2*(D*t)**(0.5)) ) +
+                      erf_approximation( (W + x - v*t)/(2*(D*t)**(0.5)) )
                  )
