@@ -22,7 +22,7 @@ anode_voltage = 2
 sch.elec_port(cathode_node, 'output', voltage=cathode_voltage, min_pressure=1) #, fluid_name='mineraloil')
 sch.elec_port(anode_node, 'output', voltage=anode_voltage)
 # normal ports do not have voltages; syntax is otherwise the same
-sch.port(input_node, 'input', min_pressure=1, fluid_name='water')
+sch.port(input_node, 'input', min_pressure=1, fluid_name='ep_cross_test_sample')
 sch.port(waste_node, 'output')
 
 # ep_cross node
