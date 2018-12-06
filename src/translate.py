@@ -395,7 +395,6 @@ def translate_tjunc(dg, name, crit_crossing_angle=0.5):
     return exprs
 
 
-
 def translate_ep_cross(dg, name, fluid_name = 'default'):
     """Create SMT expressions for an electrophoretic cross
 
@@ -404,8 +403,11 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
     :raises:
     """
 
+    # add call to another translate function for where fluid flows to (next node, channel, output)
+    # gel doesn't move, so pressure does not matter
+    # check for correct number of entries?  - algorithms script - check input function to check that they are numbers
+
     # work in progress
-    # comments will be cleaned up once code is working
     exprs = []
 
 	# Validate input
@@ -415,36 +417,14 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
 	# Electrophoretic Cross is a type of node, so call translate node
     translate_node(dg, name)
 
-
-	# Notes:
-	# anode to cathode is electrophoretic (molecules)
-	# 	and electroosmotic flow (bulk), not pressure driven
-    # user needs to specify which channel is for separation
-        # assume the other input channel is for injection?
-
-
-	# Possible things that need to have constraints/equations:
-	# assert anode to cathode is straight?
-	# assert that input node to waste node is straight?
-	#	possibly it doesn't have to be
-	# viscosity
-	# flow rate
-    # x_detector < channel length
-    # concentration peaks are disinguishable
-    # each delta t (tmax -  tmin) is > min detector sampling time
-
-
 	# Because it's done in translate_tjunc
     ep_cross_node_name = name
 
 	# figure out which nodes are for sample injection and which are for separation channel
 	# assume single input node, 3 output nodes, one junction node
-    # assume separation channel is specified by user
-
-    # is the direction of the graph same as fluid flow?
-    # are the cathode and anode both output nodes?
+    # assume separation and tail channels are specified by user
     phases = nx.get_edge_attributes(dg, 'phase')
-    for edge, phase in phases.iteritems():
+    for edge, phase in phases.items():
         # assuming only one separation channel, and only 1 tail channel
         if phase == 'separation':
             separation_channel_name = edge
@@ -455,7 +435,7 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
 
     # is there a better way to do this?
     node_kinds = nx.get_node_attributes(dg, 'kind')
-    for node, kind in node_kinds.iteritems():
+    for node, kind in node_kinds.items():
         if node not in separation_channel_name and node not in tail_channel_name:
             if kind == 'input':
                 injection_channel_name = (node, ep_cross_node_name)
@@ -463,7 +443,6 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
             elif kind == 'output':
                 waste_channel_name = (ep_cross_node_name, node)
                 waste_node_name = node  # necessary?
-
 
     # assert dimensions:
     # assert width and height of tail channel to be equal to separation channel
@@ -483,19 +462,17 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
                  algorithms.retrieve(dg, separation_channel_name, 'height'))
 
 
-    # Assert that tail and separation channels are in a straight line?  nah
-
     # electric field
     E = Variable('E')
     exprs.append(E == algorithms.calculate_electric_field(dg, anode_node_name, cathode_node_name))
-
-    # do I need a variable for each analyte? yes
-    # number of analytes unknown - is it possible to make a list of variables? types
+    # only works if cathode is an input?  only works for paths that are true in directed graph
 
     # parameters that maybe should not be hardcoded, but are hardcoded for now:
     # pass these as arguments into the translate_ep_cross function instead?
-    p = 0.5
-    q = 0.9
+    # add as parameters to ep_Cross node
+    # keep default values in case user does not specify
+    p = 0.5  # add descriptive comments saying what these are
+    qf = 0.9
     c = 0.4
 
     # assume that the analyte parameters were included in the injection port
@@ -522,7 +499,7 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
 
         # calculate velocity
         v.append( Variable('v_' + str(i)) )
-        exprs.append( v[i] == algorithms.calculate_charged_particle_velocity( mu[i], E) )
+        exprs.append( v[i] == algorithms.calculate_charged_particle_velocity(dg, mu[i], E) )
 
         # calculate t_peak, initialize variables for t_min
         t_peak.append( Variable('t_peak_' + str(i)) )
@@ -538,14 +515,14 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
     # C_negligible is the minimum concentration level
     # i.e. smallest concentration peak should be > C_negligible
     C_negligible = Variable('C_negligible')
-    C_floor = variable('C_floor')
-    sigma0 = variable('sigma0')
+    C_floor = Variable('C_floor')
+    sigma0 = Variable('sigma0')
 
     # WARNING: THIS EQUATION IS WRONG
     # the current expression for sigma0 is wrong, adding it only to test the other equations
     # only have definition of sigma0 for round channels (sigma0 ~ r_channel/2.355)
     exprs.append(sigma0 == W / (2*2.355))
-    exprs.append( C_floor == ( min(C0) / (sigma0 + math.sqrt(2*max(D) * x_detector / v_n)) ) )
+    exprs.append( C_floor == ( min(C0) / (sigma0 + (2*max(D) * x_detector / v[n-1])**0.5) ) )
     exprs.append( C_negligible ==  p * C_floor )
 
 
@@ -563,11 +540,11 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
         # and F = C(x_detector), C is concentration
         # quantify closeness of heights of peaks using the variable diff
         diff.append( Variable('diff_' + str(i)) )
-        exprs.append( diff[i] == C0[i]/C0[i+1] * math.sqrt(D[i+1]*mu[i]/(D[i]*mu[i+1])) )
+        exprs.append( diff[i] == C0[i]/C0[i+1] * (D[i+1]*mu[i]/(D[i]*mu[i+1]))**0.5 )
 
         # if 0.1 < diff < 10, then use expression Fi(tmin) = Fi+1(tmin)
         # otherwise use expression dFi/dt (tmin) + dFi+1/dt (tmin) = 0
-        t_min_constraint_expression = if_then_else( logical_and(0.1 < diff, diff < 10),
+        t_min_constraint_expression = if_then_else( logical_and(0.1 < diff[i], diff[i] < 10),
             algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) -
             algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]),
             (algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i])).Differentiate(t_min[i]) +
@@ -576,20 +553,23 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
 
         exprs.append(t_min_constraint_expression == 0)
 
+        # an alternate way to define C_negligible is:
         # C_negligible < p * min(Fi(t_peaki))
-        # I don't know how to use the min function in dreal, so I figured an
-        #  equivalent but less efficient way to do it is just to ensure it is
-        #  less than Fi(t_peaki), for every i
+        # this requires computing the concentration again, which is inefficient
         # Wrote this expression just in case; this is the more exact expression
         #  for C_negligible, in case the simpler one does not work for square
         #  channels
+        # I don't know how to use the min function in dreal, so I figured an
+        #  equivalent but less efficient way to do it is just to ensure it is
+        #  less than Fi(t_peaki), for every i
         # exprs.append( C_negligible < p*algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_peak[i]))
 
         # F(tmin, i)/(F(tmax, i)) <= c
+        # F(tmin, i)/F(tpeak, j) ~ ( Fi(tmin,i) + Fi+1(tmin, i) + (n-2)(1-q)/(n-3) ) / Fj(tpeak,j)
         exprs.append(
             (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) +
              algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]) +
-             (n-2)*(1-q)/(n-3) * C_negligible)
+             (n-2)*(1-qf)/(n-3) * C_negligible)
              / (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_peak[i]))
              <= c
          )
@@ -598,14 +578,21 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
         exprs.append(
             (algorithms.calculate_concentration(dg, C0[i], D[i], W, v[i], x_detector, t_min[i]) +
              algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_min[i]) +
-             (n-2)*(1-q)/(n-3) * C_negligible)
+             (n-2)*(1-qf)/(n-3) * C_negligible)
              / (algorithms.calculate_concentration(dg, C0[i+1], D[i+1], W, v[i+1], x_detector, t_peak[i+1]))
              <= c
             )
 
-    # add list parameter
-    # retrieve will get list
-    # for loop to handle each  variable
+    # Call translate on output - waste node
+    [exprs.append(val) for val in translation_strats[algorithms.retrieve(dg,
+                                                                         waste_node_name,
+                                                                         'kind'
+                                                                         )](dg, waste_node_name)]
+    # Call translate on output - anode
+    [exprs.append(val) for val in translation_strats[algorithms.retrieve(dg,
+                                                                         anode_node_name,
+                                                                         'kind'
+                                                                         )](dg, anode_node_name)]
 
     return exprs
 
