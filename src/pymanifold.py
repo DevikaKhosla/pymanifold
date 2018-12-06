@@ -421,7 +421,7 @@ class Schematic():
 
         if name in self.dg.nodes:
             raise ValueError("Must provide a unique name")
-        if kind.lower() not in self.translation_strats:
+        if 'translate_' + kind.lower() not in self.translation_strats:
             raise ValueError("kind must be either %s" % self.translation_strats)
 
         # Initialize fluid properties
