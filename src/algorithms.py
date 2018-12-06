@@ -207,6 +207,8 @@ def find_path(dg, start_node, end_node):
 	:param str end_node: name of node where path should end
 	:returns: a list of node names, denoting the path from the start node to the end node
             [start_node, node1, node2, ... , end_node]
+
+             None if no path is found
 	"""
 	path = [];
 	path = path + [start_node]
@@ -215,7 +217,8 @@ def find_path(dg, start_node, end_node):
 		return path
 
 	else:
-		successor_nodes = dict(dg[start_node]).keys();
+		successor_nodes = list((dg.successors(start_node))) #successor_nodes = dict(dg[start_node]).keys();
+		print(successor_nodes)
 		for node in successor_nodes:
 			if node not in path:
 				extended_path = find_path(dg, node, end_node)
@@ -223,8 +226,6 @@ def find_path(dg, start_node, end_node):
 			if extended_path:
 				path = path + extended_path
 				return path
-
-	raise ValueError("No path found between %s, and %s" %(start_node, end_node))
 	return None
 
 
@@ -245,6 +246,8 @@ def calculate_electric_field(dg, anode_node_name, cathode_node_name):
 
 	# find path between the 2 nodes (there should only be 1 possible path)
 	channel_path = dg.edges( find_path(dg, cathode_node_name, anode_node_name) )
+	if channel_path is None:
+		raise ValueError("No path found between %s and %s" %(cathode_node_name, anode_node_name))
 
 	# add check to make sure the path is a straight line?
 
@@ -288,7 +291,7 @@ def calculate_mobility(dg, channel_name, q, r):
     eta = retrieve(dg, channel_name, 'viscosity')
 
     # EP = electrophoretic
-    mu_EP = q / (4*pi*eta*r)
+    mu_EP = q / (4*math.pi*eta*r)
 
     # EOF = electroosmotic
     # from Stephen Chou's paper, rule of thumb
