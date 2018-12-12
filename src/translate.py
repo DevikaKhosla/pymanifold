@@ -400,12 +400,9 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
 
     :param str name: the name of the junction node in the electrophoretic cross
     :returns: None -- no issues with translating channel parameters to SMT
-    :raises:
+    :raises: ValueError if the analyte_properties are not defined properly
+             TypeError if the analyte_properties are not floats or ints
     """
-
-    # add call to another translate function for where fluid flows to (next node, channel, output)
-    # gel doesn't move, so pressure does not matter
-    # check for correct number of entries?  - algorithms script - check input function to check that they are numbers
 
     # work in progress
     exprs = []
@@ -467,24 +464,54 @@ def translate_ep_cross(dg, name, fluid_name = 'default'):
     exprs.append(E == algorithms.calculate_electric_field(dg, anode_node_name, cathode_node_name))
     # only works if cathode is an input?  only works for paths that are true in directed graph
 
-    # parameters that maybe should not be hardcoded, but are hardcoded for now:
-    # pass these as arguments into the translate_ep_cross function instead?
-    # add as parameters to ep_Cross node
-    # keep default values in case user does not specify
-    p = 0.5  # add descriptive comments saying what these are
-    qf = 0.9
-    c = 0.4
-
     # assume that the analyte parameters were included in the injection port
     # need to validate that the data exists?
+
     D = algorithms.retrieve(dg, injection_node_name, 'analyte_diffusivities')
     C0 = algorithms.retrieve(dg, injection_node_name, 'analyte_initial_concentrations')
     q = algorithms.retrieve(dg, injection_node_name, 'analyte_charges')
     r = algorithms.retrieve(dg, injection_node_name, 'analyte_radii')
+
+    analyte_properties = {'analyte_diffusivities': D,
+                          'analyte_initial_concentrations': C0,
+                          'analyte_charges': q,
+                          'analyte_radii': r}
+
+    for property_name, values in analyte_properties.items():
+        # check if something is defined, otherwise should be set to false
+        if not values:
+            raise ValueError('No values defined for %s in electrophoretic cross node %s'
+                %(property_name, ep_cross_node_name) )
+
+        # make sure all the values are either ints or floats
+        if not all(isinstance(x, (int, float)) for x in values):
+            raise TypeError("%s values in electrophoretic cross node '%s' must be numbers" %
+                            (property_name, ep_cross_node_name))
+
+    # n = number of analytes
+    n = len(D)
+    for property_name, values in analyte_properties.items():
+        # check that they all have the same number of values
+        n_to_check = len(values)
+
+        if not (n_to_check == n):
+            raise ValueError("Expecting %s values, and found %s for %s in node: '%s'"
+                             %(n, n_to_check, property_name, ep_cross_node_name))
+
     delta = algorithms.retrieve(dg, separation_channel_name, 'min_sampling_rate')
     x_detector = algorithms.retrieve(dg, separation_channel_name, 'x_detector')
 
-    n = len(D)
+
+    # These are currently set as parameters to the node function
+    # all are constants, numbers between 0 and 1
+    # brief descriptions:
+        # lower c, more discernable concentration peaks
+        # higher p, any given conc. peak must be higher (closer to max conc.)
+        # qf is arbitrary, rule of thumb qf = 0.9 (called q in Stephen Chou's paper)
+    c = algorithms.retrieve(dg, ep_cross_node_name, 'c')
+    p = algorithms.retrieve(dg, ep_cross_node_name, 'p')
+    qf = algorithms.retrieve(dg, ep_cross_node_name, 'qf')
+
     mu = []
     v = []
     t_peak = []

@@ -316,7 +316,7 @@ class Schematic():
             self.dg.nodes[name][key] = attr
         return
 
-    def node(self, name, x=False, y=False, kind='node'):
+    def node(self, name, x=False, y=False, kind='node', c=0.4, p=0.5, qf=0.9):
         """Create new node where fluids merge or split, kind of node (T-junction,
         Y-junction, cross, etc.) can be specified if not then a basic node
         connecting multiple channels will be created, units in brackets
@@ -325,7 +325,13 @@ class Schematic():
         :param float x:  Set the X position of this node (m)
         :param float y:  Set the Y position of this node (m)
         :param str kind: The type of node this is, default is node, other
-            option is t-junction
+            options are t-junction, ep_cross
+        :param float c: for ep_cross, 0 < c < 1; max value of the ratio between
+            the min and max concentration; smaller c means more discernable peaks
+        :param float p: for ep_cross, 0 < p < 1; min value of the ratio between
+            a given peak, and the maximum overall concentration (Cpeak/Cmax) <= p
+        :param float qf: for ep_cross; an arbitrary constant that satisfies the
+            constraint 2/(n-1) < qf < 1, where n is # of analytes, default is 0.9
         :returns: None -- no issues with creating this node
         :raises: TypeError if an input parameter is wrong type
                  ValueError if an input parameter has an invalid value
@@ -333,7 +339,10 @@ class Schematic():
         user_provided_params = {name: 'string',
                                 x: 'positive number',
                                 y: 'positive number',
-                                kind: 'string'
+                                kind: 'string',
+                                c: 'positive number',
+                                p: 'positive number',
+                                qf: 'positive number'
                                 }
         # Checking that arguments are valid
         self.validate_params(user_provided_params, 'node', name)
@@ -362,7 +371,10 @@ class Schematic():
                       'x': Variable(name + '_x'),
                       'min_x': None,
                       'y': Variable(name + '_y'),
-                      'min_y': None
+                      'min_y': None,
+                      'c': c,
+                      'p': p,
+                      'qf': qf
                       }
 
         # If user provides values, put them into the attributes dictionary
