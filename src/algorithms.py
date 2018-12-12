@@ -208,7 +208,7 @@ def find_path(dg, start_node, end_node):
 	:returns: a list of node names, denoting the path from the start node to the end node
             [start_node, node1, node2, ... , end_node]
 
-             None if no path is found
+             ** returns None if no path is found
 	"""
 	path = [];
 	path = path + [start_node]
@@ -218,7 +218,7 @@ def find_path(dg, start_node, end_node):
 
 	else:
 		successor_nodes = list((dg.successors(start_node))) #successor_nodes = dict(dg[start_node]).keys();
-		print(successor_nodes)
+		#print(successor_nodes)
 		for node in successor_nodes:
 			if node not in path:
 				extended_path = find_path(dg, node, end_node)
@@ -323,7 +323,6 @@ def erf_approximation(x):
     :returns: erf(x)
     """
     # the coefficients for the approximate function, copied from Stephen Chou's paper
-    # They are hard-coded here for now, but this can be changed later
     a1 = 0.278393
     a2 = 0.230389
     a3 = 0.000972
